@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>网页串口调试助手</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>">
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --card: #ffffff;
+    --border: #e2e6ef;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .container { max-width: 980px; margin: 0 auto; }
+  h1 {
+    font-size: 20px; margin: 0 0 16px;
+    display: flex; align-items: center; gap: 8px; font-weight: 600;
+  }
+  h1 .emoji { font-size: 24px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    margin-bottom: 14px;
+  }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .divider { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
+
+  button {
+    font: inherit; font-size: 13px; padding: 7px 16px;
+    border-radius: 7px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s, opacity .15s;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { background: #f0f3fa; border-color: #cbd5e1; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+  button.danger { background: #fff; border-color: #fca5a5; color: var(--danger); }
+  button.danger:hover:not(:disabled) { background: #fef2f2; border-color: #f87171; }
+
+  select, input[type="text"], input[type="number"] {
+    font: inherit; font-size: 13px; padding: 6px 10px;
+    border: 1px solid var(--border); border-radius: 7px;
+    background: #fff; color: var(--text); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  select:focus, input[type="text"]:focus, input[type="number"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  }
+  select:disabled, input:disabled { background: #f1f3f8; color: var(--muted); cursor: not-allowed; }
+  input[type="number"] { width: 80px; }
+
+  label.chk {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--muted); cursor: pointer; user-select: none;
+  }
+  label.chk input { display: none; }
+  label.chk .box {
+    width: 16px; height: 16px; border: 1.5px solid #c3cad8; border-radius: 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .15s; flex-shrink: 0;
+  }
+  label.chk .box::after {
+    content: ""; width: 8px; height: 4px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) scale(0); transition: transform .15s; margin-top: -2px;
+  }
+  label.chk input:checked + .box { background: var(--primary); border-color: var(--primary); }
+  label.chk input:checked + .box::after { transform: rotate(-45deg) scale(1); }
+  label.chk input:checked ~ span.txt { color: var(--text); }
+
+  #portInfo { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  #portInfo .badge { background: #eef2ff; color: var(--primary); padding: 2px 8px; border-radius: 5px; font-weight: 600; }
+  #portInfo .detail { color: #9aa3b2; font-size: 12px; }
+
+  #log {
+    width: 100%; height: 300px; background: #0f172a; color: #d1fae5;
+    border: 1px solid #1e293b; border-radius: var(--radius);
+    overflow-y: auto; overflow-x: auto; padding: 5px 5px;
+    white-space: pre; line-height: 18px;
+    font-family: "SFMono-Regular", "Cascadia Code", "Consolas", monospace;
+    font-size: 13px; box-shadow: inset 0 1px 4px rgba(0,0,0,.4);
+  }
+  #log .line { display: block; }
+    #log .lineno {
+    display: inline-block;
+    min-width: 2.2em;        /* 1~2 位时窄，多位数自动撑开 */
+    margin-right: 6px;       /* 行号与内容之间 */
+    color: #475569;
+    text-align: right;
+    user-select: none;
+  }
+  #log .ts {
+    display: inline-block;
+    margin-right: 4px;       /* 时间戳与行号/内容之间，调小 */
+    color: #64748b;
+    user-select: none;
+  }
+  #log::-webkit-scrollbar { width: 10px; height: 10px; }
+  #log::-webkit-scrollbar-thumb { background: #334155; border-radius: 6px; border: 2px solid #0f172a; }
+  #log::-webkit-scrollbar-thumb:hover { background: #475569; }
+  #log::-webkit-scrollbar-corner { background: #0f172a; }
+
+  .send-row input[type="text"] { flex: 1; min-width: 180px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  /* 日志区下方工具条 */
+  .log-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 10px;
+  }
+  .log-toolbar .spacer { flex: 1; }
+
+  /* ---------- 页面内全屏模式 ---------- */
+  body.log-fullscreen {
+    padding: 0;
+    overflow: hidden;               /* 禁止页面滚动，避免出现两条滚动条 */
+  }
+  body.log-fullscreen .container {
+    max-width: none;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+  }
+  /* 全屏时只保留日志卡片，隐藏其他卡片和标题，让日志区尽量大 */
+  body.log-fullscreen h1,
+  body.log-fullscreen .card:not(.log-card) { display: none; }
+  body.log-fullscreen .log-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+    min-height: 0;                  /* 关键：允许 flex 子项收缩，日志区才能正确撑满 */
+  }
+  body.log-fullscreen #log {
+    flex: 1;
+    height: auto !important;        /* 覆盖 JS 设置的行数高度 */
+    min-height: 0;
+  }
+  body.log-fullscreen .hint { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span class="emoji">🔌</span>网页串口调试助手</h1>
+
+  <div class="card toolbar">
+    <div class="group">
+      <button id="btnConnect" class="primary">连接串口</button>
+      <button id="btnDisconnect" class="danger" disabled>断开</button>
+      <button id="btnRename" disabled title="修改当前串口别名">重命名</button>
+    </div>
+    <span class="divider"></span>
+    <div class="group">
+      <label style="font-size:13px;color:var(--muted)">波特率
+        <select id="baud" style="margin-left:6px">
+          <option>9600</option><option>19200</option>
+          <option selected>115200</option><option>230400</option>
+          <option>460800</option><option>921600</option>
+        </select>
+      </label>
+    </div>
+    <span class="divider"></span>
+    <div id="portInfo">未连接</div>
+  </div>
+
+  <div class="card toolbar send-row">
+    <input id="sendText" type="text" placeholder="输入要发送的内容…">
+    <label class="chk"><input type="checkbox" id="hexSend"><span class="box"></span><span class="txt">HEX发送</span></label>
+    <label class="chk"><input type="checkbox" id="appendCRLF" checked><span class="box"></span><span class="txt">追加\r\n</span></label>
+    <button id="btnSend" class="primary">发送</button>
+  </div>
+
+  <div class="card toolbar">
+    <label class="chk"><input type="checkbox" id="hexShow"><span class="box"></span><span class="txt">HEX显示</span></label>
+    <label class="chk"><input type="checkbox" id="showLineNo"><span class="box"></span><span class="txt">显示行号</span></label>
+    <label class="chk"><input type="checkbox" id="showTimestamp"><span class="box"></span><span class="txt">时间戳</span></label>
+    <span class="divider"></span>
+    <label class="chk"><input type="checkbox" id="autoClear"><span class="box"></span><span class="txt">自动清空</span></label>
+    <div class="group">
+      <label style="font-size:13px;color:var(--muted)">上限(行)</label>
+      <input id="maxLines" type="number" value="20" min="1">
+    </div>
+    <button id="btnClear">清空</button>
+  </div>
+
+  <!-- 日志卡片：全屏时只保留这个 -->
+  <div class="card log-card" style="padding:14px 16px;">
+    <div id="log"></div>
+
+    <!-- 日志区下方工具条（全屏时也保留） -->
+    <div class="log-toolbar">
+      <button id="btnCopy">复制内容</button>
+      <button id="btnSave">导出 txt</button>
+      <span class="spacer"></span>
+      <button id="btnFullscreen">全屏显示</button>
+    </div>
+  </div>
+
+  <div class="hint">提示：向上滚动查看历史时新数据不会打断；滚回底部后自动跟随。勾选“自动清空”才按上限行数裁剪。全屏模式下按 Esc 退出。</div>
+</div>
+
+<script>
+let port = null;
+let reader = null;
+let writer = null;
+let reading = false;
+let currentKey = '';
+let currentAlias = '';
+let stickToBottom = true;
+
+let pending = '';
+let flushTimer = null;
+let recvBytes = 0;
+
+const logEl = document.getElementById('log');
+const portInfoEl = document.getElementById('portInfo');
+const btnConnect = document.getElementById('btnConnect');
+const btnDisconnect = document.getElementById('btnDisconnect');
+const btnRename = document.getElementById('btnRename');
+const btnSend = document.getElementById('btnSend');
+const btnClear = document.getElementById('btnClear');
+const btnCopy = document.getElementById('btnCopy');
+const btnSave = document.getElementById('btnSave');
+const btnFullscreen = document.getElementById('btnFullscreen');
+const maxLinesInput = document.getElementById('maxLines');
+const showLineNoChk = document.getElementById('showLineNo');
+const showTsChk = document.getElementById('showTimestamp');
+const baudSelect = document.getElementById('baud');
+
+const LINE_HEIGHT = 18;
+const PADDING_V = 16;
+const FLUSH_IDLE_MS = 100;
+
+/* ---------- 工具 ---------- */
+
+function hexToBytes(hex) {
+  hex = hex.replace(/\s+/g, '');
+  if (hex.length % 2) throw new Error('HEX 长度必须为偶数');
+  const arr = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return arr;
+}
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+}
+function chipName(vid) {
+  const map = {
+    0x1a86: 'WCH(CH340/CH341)',
+    0x10c4: 'Silicon Labs(CP210x)',
+    0x0403: 'FTDI',
+    0x2341: 'Arduino',
+    0x2e8a: 'Raspberry Pi Pico',
+    0x303a: 'Espressif',
+  };
+  return map[vid] || 'USB串口';
+}
+
+// 生成 [HH:MM:SS.mmm]
+function formatTimestamp(d = new Date()) {
+  const p2 = n => String(n).padStart(2, '0');
+  const p3 = n => String(n).padStart(3, '0');
+  return `[${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}]`;
+}
+
+/* ---------- 别名持久化 ---------- */
+
+function aliasStoreKey(p, index) {
+  const info = p.getInfo ? p.getInfo() : {};
+  const vid = info.usbVendorId !== undefined ? info.usbVendorId : 'na';
+  const pid = info.usbProductId !== undefined ? info.usbProductId : 'na';
+  return `ws-alias:${vid.toString(16)}:${pid.toString(16)}:${index}`;
+}
+function getAlias(key) { return localStorage.getItem(key) || ''; }
+function setAlias(key, val) { localStorage.setItem(key, val); }
+
+/* ---------- 高度 ---------- */
+
+function applyLogHeight() {
+  if (document.body.classList.contains('log-fullscreen')) return; // 全屏由 CSS 接管
+  const lines = Math.max(parseInt(maxLinesInput.value) || 1, 1);
+  logEl.style.height = (lines * LINE_HEIGHT + PADDING_V) + 'px';
+}
+maxLinesInput.addEventListener('input', applyLogHeight);
+applyLogHeight();
+
+/* ---------- 智能滚动 ---------- */
+
+function isNearBottom() {
+  return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight <= 5;
+}
+logEl.addEventListener('scroll', () => {
+  stickToBottom = isNearBottom();
+});
+function scrollToBottomIfSticky() {
+  if (stickToBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ---------- 行渲染（时间戳 + 行号 + 内容） ---------- */
+
+// 重建某一行的前缀节点（ts / lineno），根据当前开关状态
+function rebuildPrefix(lineEl, index) {
+  // 移除已有的 ts / lineno
+  lineEl.querySelectorAll('.ts, .lineno').forEach(n => n.remove());
+
+  const frag = document.createDocumentFragment();
+
+  if (showTsChk.checked) {
+    const tsEl = document.createElement('span');
+    tsEl.className = 'ts';
+    // 复用该行保存的原始时间戳（追加时写入 dataset.ts），没有则用当前时间
+    tsEl.textContent = lineEl.dataset.ts || formatTimestamp();
+    frag.appendChild(tsEl);
+  }
+
+  if (showLineNoChk.checked) {
+    const noEl = document.createElement('span');
+    noEl.className = 'lineno';
+    noEl.textContent = index;
+    frag.appendChild(noEl);
+  }
+
+  // 插入到内容节点之前（内容节点是最后一个非前缀子节点）
+  const content = lineEl.querySelector('.content');
+  lineEl.insertBefore(frag, content);
+}
+
+function renumberAll() {
+  const lines = logEl.children;
+  for (let i = 0; i < lines.length; i++) rebuildPrefix(lines[i], i + 1);
+}
+
+function appendLine(text, color, tsText) {
+  const span = document.createElement('span');
+  span.className = 'line';
+  // 记录该行时间戳，供切换开关时复用，保证时间不变
+  span.dataset.ts = tsText || formatTimestamp();
+
+  const content = document.createElement('span');
+  content.className = 'content';
+  if (color) content.style.color = color;
+  content.textContent = text;
+  span.appendChild(content);
+
+  logEl.appendChild(span);
+  // 为该行补上前缀
+  rebuildPrefix(span, logEl.childElementCount);
+}
+
+function autoTrim() {
+  if (!document.getElementById('autoClear').checked) return;
+  const max = Math.max(parseInt(maxLinesInput.value) || 1, 1);
+  let trimmed = false;
+  while (logEl.childElementCount > max) {
+    logEl.removeChild(logEl.firstElementChild);
+    trimmed = true;
+  }
+  if (trimmed) renumberAll();
+}
+
+function log(msg, color) {
+  appendLine(msg.replace(/\r?\n$/, ''), color);
+  autoTrim();
+  scrollToBottomIfSticky();
+}
+
+document.getElementById('autoClear').addEventListener('change', e => {
+  if (e.target.checked) autoTrim();
+});
+
+showLineNoChk.addEventListener('change', () => renumberAll());
+showTsChk.addEventListener('change', () => renumberAll());
+
+/* ---------- 文本行缓冲 ---------- */
+
+function drainCompleteLines() {
+  let produced = false;
+  while (true) {
+    const m = pending.match(/\r\n|\r|\n/);
+    if (!m) break;
+    const line = pending.slice(0, m.index);
+    pending = pending.slice(m.index + m[0].length);
+    // 时间戳在“切出这一行”的时刻记录
+    appendLine(line, '#4ade80', formatTimestamp());
+    produced = true;
+  }
+  if (produced) {
+    autoTrim();
+    scrollToBottomIfSticky();
+  }
+}
+
+function scheduleFlush() {
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    if (pending) {
+      appendLine(pending, '#4ade80', formatTimestamp());
+      pending = '';
+      autoTrim();
+      scrollToBottomIfSticky();
+    }
+  }, FLUSH_IDLE_MS);
+}
+
+function resetPending() {
+  clearTimeout(flushTimer);
+  flushTimer = null;
+  pending = '';
+}
+
+/* ---------- 串口信息 ---------- */
+
+function renderPortInfo() {
+  if (!port) {
+    portInfoEl.innerHTML = '未连接';
+    portInfoEl.title = '';
+    return;
+  }
+  const info = port.getInfo ? port.getInfo() : {};
+  const vid = info.usbVendorId;
+  const pid = info.usbProductId;
+  const chip = chipName(vid);
+  const vidPid = (vid !== undefined && pid !== undefined)
+    ? `VID:0x${vid.toString(16).padStart(4,'0')} PID:0x${pid.toString(16).padStart(4,'0')}`
+    : 'VID/PID 未知';
+  const baud = baudSelect.value;
+  const detail = `${chip} · ${vidPid} · ${baud} baud`;
+
+  portInfoEl.innerHTML =
+    `已连接: <span class="badge">${currentAlias}</span>` +
+    `<span class="detail">${detail}</span>`;
+  portInfoEl.title = detail;
+}
+
+/* ---------- 连接 ---------- */
+
+btnConnect.onclick = async () => {
+  if (!('serial' in navigator)) {
+    alert('当前浏览器不支持 Web Serial API，请使用 Chrome/Edge 等 Chromium 内核浏览器');
+    return;
+  }
+  try {
+    const p = await navigator.serial.requestPort();
+    const baudRate = parseInt(baudSelect.value);
+
+    let index = -1;
+    try {
+      const ports = await navigator.serial.getPorts();
+      index = ports.findIndex(x => x === p);
+    } catch (_) {}
+
+    currentKey = aliasStoreKey(p, index);
+    let saved = getAlias(currentKey);
+    if (!saved) {
+      saved = prompt(`给这个串口起个别名（如 COM3，可留空用默认）`, `串口#${index + 1}`);
+      if (saved === null) saved = `串口#${index + 1}`;
+      saved = saved.trim() || `串口#${index + 1}`;
+      setAlias(currentKey, saved);
+    }
+    currentAlias = saved;
+
+    await p.open({ baudRate });
+    port = p;
+
+    renderPortInfo();
+    log(`[已连接] ${currentAlias} 波特率 ${baudRate}`, '#22d3ee');
+
+    baudSelect.disabled = true;
+
+    btnConnect.disabled = true;
+    btnDisconnect.disabled = false;
+    btnRename.disabled = false;
+    btnSend.disabled = false;
+
+    resetPending();
+    recvBytes = 0;
+    writer = port.writable.getWriter();
+    readLoop();
+  } catch (e) {
+    if (e.name === 'NotFoundError') return;
+    log(`[连接失败] ${e.message}`, '#f87171');
+  }
+};
+
+btnRename.onclick = () => {
+  if (!port || !currentKey) return;
+  const v = prompt('修改别名（如 COM3）', currentAlias);
+  if (v === null) return;
+  const val = v.trim() || currentAlias;
+  currentAlias = val;
+  setAlias(currentKey, val);
+  renderPortInfo();
+};
+
+/* ---------- 读取 ---------- */
+
+async function readLoop() {
+  reading = true;
+  reader = port.readable.getReader();
+  const decoder = new TextDecoder();
+  try {
+    while (reading) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      recvBytes += value.length;
+
+      if (document.getElementById('hexShow').checked) {
+        appendLine(bytesToHex(value), '#4ade80', formatTimestamp());
+        autoTrim();
+        scrollToBottomIfSticky();
+      } else {
+        pending += decoder.decode(value, { stream: true });
+        drainCompleteLines();
+        scheduleFlush();
+      }
+    }
+  } catch (e) {
+    if (reading) log(`[读取错误] ${e.message}`, '#f87171');
+  } finally {
+    try { reader.releaseLock(); } catch (_) {}
+    reader = null;
+    if (pending) {
+      appendLine(pending, '#4ade80', formatTimestamp());
+      pending = '';
+      autoTrim();
+      scrollToBottomIfSticky();
+    }
+    resetPending();
+  }
+}
+
+/* ---------- 发送 ---------- */
+
+btnSend.onclick = async () => {
+  if (!writer) return;
+  try {
+    const text = document.getElementById('sendText').value;
+    let data;
+    if (document.getElementById('hexSend').checked) {
+      data = hexToBytes(text);
+    } else {
+      let s = text;
+      if (document.getElementById('appendCRLF').checked) s += '\r\n';
+      data = new TextEncoder().encode(s);
+    }
+    await writer.write(data);
+    log(`[发送] ${document.getElementById('hexSend').checked ? bytesToHex(data) : text}`, '#fbbf24');
+  } catch (e) {
+    log(`[发送失败] ${e.message}`, '#f87171');
+  }
+};
+
+/* ---------- 断开 ---------- */
+
+btnDisconnect.onclick = async () => {
+  try {
+    reading = false;
+    if (reader) await reader.cancel();
+    if (writer) { writer.releaseLock(); writer = null; }
+    if (port) { await port.close(); port = null; }
+    log('[已断开]', '#22d3ee');
+  } catch (e) {
+    log(`[断开异常] ${e.message}`, '#f87171');
+  } finally {
+    resetPending();
+    currentKey = ''; currentAlias = '';
+    renderPortInfo();
+    baudSelect.disabled = false;
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    btnRename.disabled = true;
+    btnSend.disabled = true;
+  }
+};
+
+btnClear.onclick = () => {
+  logEl.textContent = '';
+  stickToBottom = true;
+  resetPending();
+};
+
+/* ---------- 复制内容 ---------- */
+
+btnCopy.onclick = async () => {
+  // 取所有行的内容文本（不含行号/时间戳），保留换行
+  const lines = Array.from(logEl.children).map(line => {
+    const content = line.querySelector('.content');
+    return content ? content.textContent : line.textContent;
+  });
+  const text = lines.join('\n');
+
+  try {
+    await navigator.clipboard.writeText(text);
+    flashButton(btnCopy, '已复制');
+  } catch (_) {
+    // 回退：临时 textarea
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    flashButton(btnCopy, '已复制');
+  }
+};
+
+function flashButton(btn, txt) {
+  const old = btn.textContent;
+  btn.textContent = txt;
+  btn.disabled = true;
+  setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 1200);
+}
+
+/* ---------- 导出 txt ---------- */
+
+btnSave.onclick = () => {
+  const lines = Array.from(logEl.children).map(line => {
+    const content = line.querySelector('.content');
+    return content ? content.textContent : line.textContent;
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = formatTimestamp().replace(/[\[\]:.]/g, '-');
+  a.href = url;
+  a.download = `serial-log-${ts}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+/* ---------- 页面内全屏 ---------- */
+
+function enterFullscreen() {
+  document.body.classList.add('log-fullscreen');
+  btnFullscreen.textContent = '退出全屏';
+  scrollToBottomIfSticky();
+}
+
+function exitFullscreen() {
+  document.body.classList.remove('log-fullscreen');
+  btnFullscreen.textContent = '全屏显示';
+  applyLogHeight();   // 恢复按行数计算的高度
+  scrollToBottomIfSticky();
+}
+
+btnFullscreen.onclick = () => {
+  if (document.body.classList.contains('log-fullscreen')) exitFullscreen();
+  else enterFullscreen();
+};
+
+// Esc 退出全屏
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('log-fullscreen')) {
+    exitFullscreen();
+  }
+});
+
+/* ---------- 热插拔 ---------- */
+
+if ('serial' in navigator) {
+  navigator.serial.addEventListener('connect', () => log('[设备插入]', '#22d3ee'));
+  navigator.serial.addEventListener('disconnect', e => {
+    log('[设备拔出]', '#f87171');
+    if (port && e.target === port) btnDisconnect.click();
+  });
+}
+
+btnSend.disabled = true;
+</script>
+</body>
+</html>
